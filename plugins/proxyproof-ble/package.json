@@ -1,0 +1,14 @@
+{
+  "name": "proxyproof-ble",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "capacitor": {
+    "android": {
+      "src": "android"
+    },
+    "ios": {
+      "src": "ios"
+    }
+  }
+}

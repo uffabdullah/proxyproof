@@ -1,0 +1,9 @@
+{
+  "appId": "com.proxyproof.app",
+  "appName": "ProxyProof",
+  "webDir": "public",
+  "server": {
+    "url": "https://proxyproof-cyan.vercel.app",
+    "androidScheme": "https"
+  }
+}

@@ -1,5 +1,7 @@
 node_modules
 ProxyProof.apk
+plugins/proxyproof-ble/android/build
+plugins/proxyproof-ble/android/.gradle
 .next
 .vercel
 .env

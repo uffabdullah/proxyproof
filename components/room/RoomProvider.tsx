@@ -4,10 +4,9 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { deviceLabel, getDeviceSecret } from "@/lib/device";
-import { bleScanSupported, listenForRssi } from "@/lib/geo";
-import { RSSI_IN_ROOM, listenForBeacons, type HeardBeacon } from "@/lib/ble";
+import { bleScanSupported, listenForRssi, watchRoom, type Fix } from "@/lib/geo";
 import { playForReason, unlockSound } from "@/lib/sound";
-import { PROFILE_COLUMNS, type MarkResult, type Profile } from "@/lib/types";
+import { PROFILE_COLUMNS, SESSION_COLUMNS, type MarkResult, type Profile } from "@/lib/types";
 
 type BleState = {
   supported: boolean;
@@ -54,10 +53,10 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
     error: null,
   });
   const [statuses, setStatuses] = useState<Record<string, MarkResult>>({});
+  const fixRef = useRef<Fix | null>(null);
   const rssiRef = useRef<number | null>(null);
+  const tokens = useRef<Record<string, { token: string; at: number }>>({});
   const heardReason = useRef<Record<string, string>>({});
-  const beacons = useRef<Record<string, HeardBeacon>>({});
-  const tracked = useRef<Record<string, string>>({});
   const stopBle = useRef<null | (() => void)>(null);
 
   async function bindDevice() {
@@ -121,106 +120,90 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
     const stop = { current: false };
     const timer = { current: 0 as number | null };
 
+    const channel = supabase.channel("proxyproof-beacons");
+    channel.on("broadcast", { event: "token" }, ({ payload }) => {
+      const body = payload as { token?: string; sessionId?: string };
+      if (!body.token || !body.sessionId) return;
+      tokens.current[body.sessionId] = { token: body.token, at: Date.now() };
+    });
+    channel.subscribe();
+
     const armSound = () => unlockSound();
     window.addEventListener("pointerdown", armSound, { once: true });
 
-    let stopListen = () => {};
-    listenForBeacons((beacon) => {
-      beacons.current[beacon.sessionPrefix] = beacon;
-      rssiRef.current = beacon.rssi;
-      setBle((current) => ({ ...current, on: true, supported: true, rssi: beacon.rssi, error: null }));
-    })
-      .then((stopScan) => {
-        stopListen = stopScan;
-        setBle((current) => ({ ...current, on: true, supported: true }));
-      })
-      .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : "Bluetooth did not start.";
-        setBle((current) => ({ ...current, on: false, supported: false, error: message }));
-      });
+    const stopWatch = watchRoom(
+      (fix) => {
+        fixRef.current = fix;
+        setLocState("on");
+      },
+      () => setLocState("off"),
+    );
 
     const tick = async () => {
       if (stop.current) return;
-      const fresh = Object.values(beacons.current).filter((beacon) => Date.now() - beacon.at < 8000);
-      const seen = new Set<string>();
-      const next: Record<string, MarkResult> = {};
+      const { data: sessions } = await supabase
+        .from("sessions")
+        .select(SESSION_COLUMNS)
+        .eq("status", "live")
+        .gt("ends_at", new Date().toISOString());
 
-      for (const beacon of fresh) {
-        const strong = beacon.rssi >= RSSI_IN_ROOM && beacon.rssi <= 0;
+      const next: Record<string, MarkResult> = {};
+      for (const session of (sessions ?? []) as Array<{ id: string; title: string; course: string }>) {
+        const heard = tokens.current[session.id];
+        const fresh = heard && Date.now() - heard.at < 8000 ? heard.token : null;
+        const fix = fixRef.current;
         const args = {
           p_secret: getDeviceSecret(),
-          p_session_id: null,
-          p_token: beacon.token,
-          p_student_id: profile.id,
-          p_rssi: beacon.rssi,
-          p_session_prefix: beacon.sessionPrefix,
+          p_session_id: session.id,
+          p_lat: fix?.lat ?? null,
+          p_lng: fix?.lng ?? null,
+          p_rssi: rssiRef.current,
+          p_accuracy: fix?.accuracy ?? null,
         };
-        const marked = strong
-          ? await supabase.rpc("auto_mark", args)
-          : await supabase.rpc("presence_ping", args);
+        const marked = await supabase.rpc("auto_mark", { ...args, p_token: fresh });
         let result = (marked.data ?? { ok: false, reason: "error" }) as MarkResult;
         let error = marked.error;
-        if (!error && strong && (result.reason === "marked" || result.reason === "already" || result.reason === "present")) {
+        if (!error && (result.reason === "marked" || result.reason === "already" || result.reason === "present")) {
           const ping = await supabase.rpc("presence_ping", args);
           if (!ping.error && ping.data) result = ping.data as MarkResult;
           else if (ping.error) error = ping.error;
         }
-        const key = result.session_id || beacon.sessionPrefix;
-        if (result.session_id) {
-          tracked.current[result.session_id] = beacon.sessionPrefix;
-          seen.add(result.session_id);
-        }
-        seen.add(beacon.sessionPrefix);
         if (error) {
-          next[key] = { ok: false, reason: "error", message: error.message, title: "Beacon", course: "Bluetooth" };
+          next[session.id] = {
+            ok: false,
+            reason: "error",
+            message: error.message,
+            title: session.title,
+            course: session.course,
+          };
         } else {
+          if (result.reason === "stale") delete tokens.current[session.id];
           if (result.reason === "grace") {
-            result = { ...result, message: `${result.seconds ?? 30}s to get back in Bluetooth range before this becomes an absence.` };
+            result = {
+              ...result,
+              message: `${result.seconds ?? 30}s to get back in the room before this mark becomes an absence.`,
+            };
           }
-          if (result.reason === "present" || result.reason === "marked") {
-            result = { ...result, message: `In the room${beacon.rssi ? ` · ${beacon.rssi} dBm` : ""}. Stay until the session ends.` };
-          }
-          if (result.reason && result.reason !== heardReason.current[key]) {
+          if (result.reason && result.reason !== heardReason.current[session.id]) {
             playForReason(result.reason);
-            heardReason.current[key] = result.reason;
+            heardReason.current[session.id] = result.reason;
           }
-          next[key] = result;
+          next[session.id] = { ...result, title: session.title, course: session.course };
         }
       }
-
-      for (const [sessionId, prefix] of Object.entries(tracked.current)) {
-        if (seen.has(sessionId) || seen.has(prefix)) continue;
-        const ping = await supabase.rpc("presence_ping", {
-          p_secret: getDeviceSecret(),
-          p_session_id: sessionId,
-          p_token: null,
-          p_student_id: profile.id,
-          p_rssi: null,
-          p_session_prefix: null,
-        });
-        const result = (ping.data ?? { ok: false, reason: "error" }) as MarkResult;
-        if (result.reason === "grace") {
-          result.message = `${result.seconds ?? 30}s to get back in Bluetooth range before this becomes an absence.`;
-        }
-        if (result.reason === "absent" || result.reason === "closed") delete tracked.current[sessionId];
-        if (result.reason && result.reason !== heardReason.current[sessionId]) {
-          playForReason(result.reason);
-          heardReason.current[sessionId] = result.reason;
-        }
-        next[sessionId] = result;
-      }
-
       if (!stop.current) setStatuses(next);
-      if (!stop.current) timer.current = window.setTimeout(tick, 2000);
+      const watching = Object.values(next).some((item) => item.reason === "grace" || item.reason === "present");
+      if (!stop.current) timer.current = window.setTimeout(tick, watching ? 2000 : 4000);
     };
 
-    timer.current = window.setTimeout(tick, 600);
+    timer.current = window.setTimeout(tick, 500);
 
     return () => {
       stop.current = true;
       if (timer.current) window.clearTimeout(timer.current);
-      stopListen();
+      stopWatch();
       window.removeEventListener("pointerdown", armSound);
+      supabase.removeChannel(channel);
     };
   }, [deviceStatus, profile, supabase]);
 

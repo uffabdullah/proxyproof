@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { ago, downloadCsv, formatRemaining, statusCopy } from "@/lib/format";
-import { advertiseBeacon, stopBeacon } from "@/lib/ble";
 import {
   ATTENDANCE_COLUMNS,
   PROFILE_COLUMNS,
@@ -65,6 +64,7 @@ export default function LiveSession() {
   useEffect(() => {
     if (!session || session.status !== "live" || profile?.id !== session.organiser_id) return;
     let stop = false;
+    const channel = supabase.channel("proxyproof-beacons");
 
     const pulse = async () => {
       if (stop) return;
@@ -79,22 +79,24 @@ export default function LiveSession() {
         return;
       }
       setEpoch(body.epoch ?? null);
-      if (!body.token) return;
-      try {
-        await advertiseBeacon(session.id, body.token);
-        setError(null);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Bluetooth advertising did not start.";
-        setError(message);
+      setError(null);
+      if (body.token) {
+        await channel.send({
+          type: "broadcast",
+          event: "token",
+          payload: { token: body.token, sessionId: session.id, epoch: body.epoch },
+        });
       }
     };
 
-    pulse();
+    channel.subscribe((status) => {
+      if (status === "SUBSCRIBED") pulse();
+    });
     const timer = window.setInterval(pulse, 3000);
     return () => {
       stop = true;
       window.clearInterval(timer);
-      void stopBeacon();
+      supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id, session?.id, session?.status, supabase]);
@@ -189,7 +191,8 @@ export default function LiveSession() {
         <div>
           <h1 className="serif text-5xl md:text-6xl">{session.title}</h1>
           <p className="mt-3 text-ink/70">
-            {live ? `Bluetooth beacon · ${formatRemaining(remaining)} left` : "Closed"}
+            {live ? `Broadcasting · ${formatRemaining(remaining)} left` : "Closed"}
+            {session.radius_meters ? ` · ${session.radius_meters}m room` : ""}
           </p>
         </div>
         <div className="orb" aria-hidden style={{ animationDuration: epoch ? "5s" : undefined }} />
@@ -216,7 +219,7 @@ export default function LiveSession() {
       {error && <p className="mt-4 rounded-2xl bg-coral/10 px-4 py-3 text-sm">{error}</p>}
       {live && (
         <p className="mt-4 max-w-xl text-sm text-ink/60">
-          Leave this screen open. The phone is broadcasting a Bluetooth beacon with no pairing. The token rotates every few seconds. A student who walks out of range has 30 seconds to return.
+          Leave this screen open. A student who walks out has 30 seconds to return. After that they are marked absent.
         </p>
       )}
 

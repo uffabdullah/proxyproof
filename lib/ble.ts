@@ -1,3 +1,7 @@
+// Standby. The live app uses room location. This module and plugins/proxyproof-ble
+// stay in the project so Bluetooth advertising can be switched on later.
+export const BLE_ACTIVE = false;
+
 export const BLE_SERVICE_UUID = "f0f0c0de-7a3b-4d1e-9c8a-6b5d4e3f2a10";
 export const RSSI_IN_ROOM = -70;
 

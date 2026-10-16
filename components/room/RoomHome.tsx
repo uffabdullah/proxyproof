@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { currentFix } from "@/lib/geo";
 import { ago, downloadCsv, formatWhen, statusCopy } from "@/lib/format";
 import {
   ATTENDANCE_COLUMNS,
@@ -37,7 +38,7 @@ export default function RoomHome() {
 }
 
 function StudentHome() {
-  const { profile, deviceStatus, deviceError, ble, statuses, refreshDevice, listenBle } = useRoom();
+  const { profile, deviceStatus, deviceError, locState, ble, statuses, refreshDevice, listenBle } = useRoom();
   const [history, setHistory] = useState<Array<SessionRow & { marked_at?: string; method?: string; presence?: string }>>([]);
   const [closedCount, setClosedCount] = useState(0);
   const [attendedCount, setAttendedCount] = useState(0);
@@ -120,10 +121,10 @@ function StudentHome() {
             <div>
               <p className="eyebrow text-ink/50">Listening</p>
               <p className="mt-2 text-lg">
-                {ble.on ? "Listening for the room beacon" : "Bluetooth is not listening yet"}
-                {ble.rssi != null ? ` · ${ble.rssi} dBm` : ""}
+                {locState === "off" ? "Location is off" : locState === "on" ? "Location stays on for the whole session" : "Asking for location"}
+                {ble.rssi != null ? ` · RSSI ${ble.rssi}` : ""}
               </p>
-              <p className="mt-1 text-sm text-ink/60">You are marked only while the organiser’s Bluetooth signal is strong. Step out and you have 30 seconds to return.</p>
+              <p className="mt-1 text-sm text-ink/60">Leave the room and you have 30 seconds to return. After that, the mark becomes an absence.</p>
             </div>
             {ble.supported && (
               <button type="button" className="btn btn-ghost" onClick={() => listenBle()}>
@@ -175,6 +176,8 @@ function OrganiserHome() {
   const [title, setTitle] = useState("");
   const [course, setCourse] = useState("");
   const [minutes, setMinutes] = useState(5);
+  const [radius, setRadius] = useState(50);
+  const [allowManualOnly, setAllowManualOnly] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
@@ -222,13 +225,19 @@ function OrganiserHome() {
     event.preventDefault();
     setError(null);
     setPending(true);
+    const fix = allowManualOnly ? null : await currentFix();
+    if (!fix && !allowManualOnly) {
+      setPending(false);
+      setError("Location was blocked. Turn it on, or start with manual marks only.");
+      return;
+    }
     const { data, error: rpcError } = await supabase.rpc("start_session", {
       p_title: title,
       p_course: course,
       p_duration: minutes * 60,
-      p_lat: null,
-      p_lng: null,
-      p_radius: 50,
+      p_lat: fix?.lat ?? null,
+      p_lng: fix?.lng ?? null,
+      p_radius: radius,
     });
     setPending(false);
     if (rpcError || !data) {
@@ -290,9 +299,18 @@ function OrganiserHome() {
             <option value={15}>15 minutes</option>
           </select>
         </label>
-        <p className="text-sm text-ink/60 md:col-span-2">
-          Your phone broadcasts the session over Bluetooth. Students are marked only when that signal is strong enough.
-        </p>
+        <label>
+          <span className="eyebrow text-ink/50">Room radius</span>
+          <select className="field mt-2" value={radius} onChange={(event) => setRadius(Number(event.target.value))}>
+            <option value={30}>30 metres</option>
+            <option value={50}>50 metres</option>
+            <option value={80}>80 metres</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-3 text-sm md:col-span-2">
+          <input type="checkbox" checked={allowManualOnly} onChange={(event) => setAllowManualOnly(event.target.checked)} />
+          Start without location. Automatic marks will not work; you can still add names by hand.
+        </label>
         {error && <p className="rounded-2xl bg-coral/10 px-4 py-3 text-sm md:col-span-2">{error}</p>}
         <button className="btn btn-ink md:col-span-2" disabled={pending}>
           {pending ? "Finding the room…" : "Broadcast"}

@@ -37,17 +37,17 @@ const chapters = [
   {
     n: "01",
     title: "The organiser’s phone becomes the beacon.",
-    body: "The organiser’s phone broadcasts a Bluetooth signal, with no pairing. The signal carries the session id and a token that rotates every few seconds.",
+    body: "Start a session for a fixed window, five minutes by default. While that screen stays open it broadcasts a token that changes every five seconds.",
   },
   {
     n: "02",
     title: "A student’s phone answers on its own.",
-    body: "A student’s phone picks up that signal and sends the session id, the fresh token, and the student id. There is nothing to type.",
+    body: "No code to type and nothing to photograph. The phone sends the live session, the fresh token, and the identity bound to that device.",
   },
   {
     n: "03",
     title: "The server is the only one allowed to say present.",
-    body: "The server marks them only if they are registered, the token is fresh, the phone is their registered device, and the signal strength shows they are in the room. Walk out and you have 30 seconds to come back.",
+    body: "A mark lands only when the student is registered, the token is from this window, the request comes from their approved phone, and they are inside the room. Walk out and you have 30 seconds to return.",
   },
 ];
 

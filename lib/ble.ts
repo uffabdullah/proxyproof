@@ -1,6 +1,4 @@
-// Standby. The live app uses room location. This module and plugins/proxyproof-ble
-// stay in the project so Bluetooth advertising can be switched on later.
-export const BLE_ACTIVE = false;
+// The website keeps using room location. The Android app turns Bluetooth on.
 
 export const BLE_SERVICE_UUID = "f0f0c0de-7a3b-4d1e-9c8a-6b5d4e3f2a10";
 export const RSSI_IN_ROOM = -70;
@@ -56,6 +54,15 @@ export function parseAirName(value: string | undefined | null) {
 function bluetooth() {
   if (typeof navigator === "undefined") return undefined;
   return (navigator as Navigator & { bluetooth?: WebBluetooth }).bluetooth;
+}
+
+export async function inNativeApp() {
+  try {
+    const { Capacitor } = await import("@capacitor/core");
+    return Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
 }
 
 async function nativePlugin() {

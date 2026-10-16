@@ -49,8 +49,8 @@ public class ProxyProofBlePlugin extends Plugin {
         String payload = call.getString("payload");
         if (payload == null) payload = "";
         BluetoothAdapter adapter = adapter();
-        if (adapter == null || adapter.getBluetoothLeAdvertiser() == null) {
-            call.reject("This phone cannot broadcast Bluetooth.");
+        if (adapter == null || !adapter.isEnabled() || adapter.getBluetoothLeAdvertiser() == null) {
+            call.reject("Turn Bluetooth on, then start the session again.");
             return;
         }
         advertiser = adapter.getBluetoothLeAdvertiser();
@@ -78,8 +78,8 @@ public class ProxyProofBlePlugin extends Plugin {
     public void startScan(PluginCall call) {
         if (!ensure(call)) return;
         BluetoothAdapter adapter = adapter();
-        if (adapter == null || adapter.getBluetoothLeScanner() == null) {
-            call.reject("This phone cannot hear Bluetooth.");
+        if (adapter == null || !adapter.isEnabled() || adapter.getBluetoothLeScanner() == null) {
+            call.reject("Turn Bluetooth on, then open this screen again.");
             return;
         }
         scanner = adapter.getBluetoothLeScanner();

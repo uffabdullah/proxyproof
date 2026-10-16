@@ -38,7 +38,7 @@ export default function RoomHome() {
 }
 
 function StudentHome() {
-  const { profile, deviceStatus, deviceError, locState, ble, statuses, refreshDevice, listenBle } = useRoom();
+  const { profile, deviceStatus, deviceError, locState, ble, statuses, refreshDevice, listenBle, inApp } = useRoom();
   const [history, setHistory] = useState<Array<SessionRow & { marked_at?: string; method?: string; presence?: string }>>([]);
   const [closedCount, setClosedCount] = useState(0);
   const [attendedCount, setAttendedCount] = useState(0);
@@ -121,10 +121,21 @@ function StudentHome() {
             <div>
               <p className="eyebrow text-ink/50">Listening</p>
               <p className="mt-2 text-lg">
-                {locState === "off" ? "Location is off" : locState === "on" ? "Location stays on for the whole session" : "Asking for location"}
-                {ble.rssi != null ? ` · RSSI ${ble.rssi}` : ""}
+                {inApp
+                  ? ble.on
+                    ? `Hearing the beacon${ble.rssi != null ? ` · ${ble.rssi} dBm` : ""}`
+                    : "Starting Bluetooth"
+                  : locState === "off"
+                    ? "Location is off"
+                    : locState === "on"
+                      ? "Location stays on for the whole session"
+                      : "Asking for location"}
               </p>
-              <p className="mt-1 text-sm text-ink/60">Leave the room and you have 30 seconds to return. After that, the mark becomes an absence.</p>
+              <p className="mt-1 text-sm text-ink/60">
+                {inApp
+                  ? "You are marked only while this phone hears a strong Bluetooth beacon. Step out and you have 30 seconds to return."
+                  : "Leave the room and you have 30 seconds to return. After that, the mark becomes an absence."}
+              </p>
             </div>
             {ble.supported && (
               <button type="button" className="btn btn-ghost" onClick={() => listenBle()}>

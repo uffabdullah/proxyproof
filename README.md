@@ -4,6 +4,8 @@ Live site: https://proxyproof-cyan.vercel.app
 
 Android install: https://github.com/uffabdullah/proxyproof/releases/latest
 
+The Android app uses Bluetooth. One phone starts the session and broadcasts. A second Android phone, signed in as a student, is marked when it hears that beacon. The website on a laptop still uses room location.
+
 Attendance that counts only when a student is physically in the room.
 
 An organiser starts a session on their phone. While that screen stays open it broadcasts a token that rotates every five seconds. A student’s phone, already bound to their name, sends the session, the fresh token, and a presence check. The server marks them only if the token is current, the phone is their approved device, and they are inside the room radius.

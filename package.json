@@ -15,6 +15,7 @@
     "gsap": "^3.13.0",
     "lenis": "^1.3.11",
     "next": "^15.5.4",
+    "proxyproof-ble": "file:plugins/proxyproof-ble",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "three": "^0.180.0"

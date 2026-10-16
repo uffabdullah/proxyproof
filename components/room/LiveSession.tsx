@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { ago, downloadCsv, formatRemaining, statusCopy } from "@/lib/format";
+import { advertiseBeacon, inNativeApp, stopBeacon } from "@/lib/ble";
 import {
   ATTENDANCE_COLUMNS,
   PROFILE_COLUMNS,
@@ -80,13 +81,21 @@ export default function LiveSession() {
       }
       setEpoch(body.epoch ?? null);
       setError(null);
-      if (body.token) {
-        await channel.send({
-          type: "broadcast",
-          event: "token",
-          payload: { token: body.token, sessionId: session.id, epoch: body.epoch },
-        });
+      if (!body.token) return;
+      if (await inNativeApp()) {
+        try {
+          await advertiseBeacon(session.id, body.token);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Bluetooth advertising did not start.";
+          setError(message);
+        }
+        return;
       }
+      await channel.send({
+        type: "broadcast",
+        event: "token",
+        payload: { token: body.token, sessionId: session.id, epoch: body.epoch },
+      });
     };
 
     channel.subscribe((status) => {
@@ -97,6 +106,7 @@ export default function LiveSession() {
       stop = true;
       window.clearInterval(timer);
       supabase.removeChannel(channel);
+      void stopBeacon();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id, session?.id, session?.status, supabase]);

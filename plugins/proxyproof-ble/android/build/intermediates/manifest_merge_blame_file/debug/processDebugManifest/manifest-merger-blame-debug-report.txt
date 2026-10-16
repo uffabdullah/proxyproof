@@ -1,0 +1,42 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.proxyproof.ble" >
+4
+5    <uses-sdk android:minSdkVersion="24" />
+6
+7    <uses-permission
+7-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:2:5-95
+8        android:name="android.permission.BLUETOOTH"
+8-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:2:22-65
+9        android:maxSdkVersion="30" />
+9-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:2:66-92
+10    <uses-permission
+10-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:3:5-101
+11        android:name="android.permission.BLUETOOTH_ADMIN"
+11-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:3:22-71
+12        android:maxSdkVersion="30" />
+12-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:3:72-98
+13    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+13-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:4:5-78
+13-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:4:22-75
+14    <uses-permission
+14-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:5:5-120
+15        android:name="android.permission.BLUETOOTH_SCAN"
+15-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:5:22-70
+16        android:usesPermissionFlags="neverForLocation" />
+16-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:5:71-117
+17    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+17-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:6:5-76
+17-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:6:22-73
+18    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+18-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:7:5-79
+18-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:7:22-76
+19
+20    <uses-feature
+20-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:8:5-91
+21        android:name="android.hardware.bluetooth_le"
+21-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:8:19-63
+22        android:required="false" />
+22-->C:\Users\abdul\proxyproof\plugins\proxyproof-ble\android\src\main\AndroidManifest.xml:8:64-88
+23
+24</manifest>

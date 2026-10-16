@@ -2,6 +2,8 @@
 
 Live site: https://proxyproof-cyan.vercel.app
 
+Android install: https://github.com/uffabdullah/proxyproof/releases/latest
+
 Attendance that counts only when a student is physically in the room.
 
 An organiser starts a session on their phone. While that screen stays open it broadcasts a token that rotates every five seconds. A student’s phone, already bound to their name, sends the session, the fresh token, and a presence check. The server marks them only if the token is current, the phone is their approved device, and they are inside the room radius.

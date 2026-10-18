@@ -19,6 +19,8 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.ParcelUuid;
 import androidx.core.content.FileProvider;
 import java.io.File;
@@ -33,6 +35,8 @@ import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @CapacitorPlugin(
     name = "ProxyProofBle",
@@ -48,10 +52,13 @@ import java.util.UUID;
     }
 )
 public class ProxyProofBlePlugin extends Plugin {
-    static final UUID SERVICE = UUID.fromString("f0f0c0de-7a3b-4d1e-9c8a-6b5d4e3f2a10");
+    static final UUID SERVICE = UUID.fromString("0000f0f0-0000-1000-8000-00805f9b34fb");
+    private static final Pattern AIR = Pattern.compile("PP[0-9A-F]{16}");
     private BluetoothLeAdvertiser advertiser;
     private BluetoothLeScanner scanner;
     private PluginCall pending;
+    private PluginCall advertiseCall;
+    private final Handler handler = new Handler(Looper.getMainLooper());
 
     @PluginMethod
     public void prepare(PluginCall call) {
@@ -154,6 +161,48 @@ public class ProxyProofBlePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void alert(PluginCall call) {
+        String title = call.getString("title", "ProxyProof");
+        String body = call.getString("body", "");
+        int id = call.getInt("id", 4104);
+        Long until = call.getLong("until");
+        NotificationManager manager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager == null) {
+            call.reject("Notifications are unavailable.");
+            return;
+        }
+        boolean countdown = until != null && until > 0;
+        String channelId = countdown ? "proxyproof-alerts" : "proxyproof";
+        if (Build.VERSION.SDK_INT >= 26) {
+            int importance = countdown ? NotificationManager.IMPORTANCE_HIGH : NotificationManager.IMPORTANCE_DEFAULT;
+            manager.createNotificationChannel(new NotificationChannel(channelId, countdown ? "Attendance alerts" : "Attendance", importance));
+        }
+        Notification.Builder builder = Build.VERSION.SDK_INT >= 26
+            ? new Notification.Builder(getContext(), channelId)
+            : new Notification.Builder(getContext());
+        builder.setContentTitle(title)
+            .setContentText(body)
+            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setAutoCancel(!countdown);
+        if (countdown) {
+            builder.setWhen(until);
+            builder.setUsesChronometer(true);
+            builder.setOngoing(true);
+            if (Build.VERSION.SDK_INT >= 24) builder.setChronometerCountDown(true);
+        }
+        manager.notify(id, builder.build());
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void clearAlert(PluginCall call) {
+        int id = call.getInt("id", 4103);
+        NotificationManager manager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager != null) manager.cancel(id);
+        call.resolve();
+    }
+
+    @PluginMethod
     public void startAdvertising(PluginCall call) {
         if (!ensure(call)) return;
         pending = null;
@@ -165,6 +214,12 @@ public class ProxyProofBlePlugin extends Plugin {
             return;
         }
         advertiser = adapter.getBluetoothLeAdvertiser();
+        if (advertiseCall != null) {
+            advertiseCall.resolve();
+            advertiseCall = null;
+        }
+        handler.removeCallbacks(advertiseTimeout);
+        advertiseCall = call;
         advertiser.stopAdvertising(advertiseCallback);
         AdvertiseSettings settings = new AdvertiseSettings.Builder()
             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
@@ -172,11 +227,14 @@ public class ProxyProofBlePlugin extends Plugin {
             .setConnectable(false)
             .build();
         AdvertiseData data = new AdvertiseData.Builder()
-            .addServiceUuid(new ParcelUuid(SERVICE))
+            .setIncludeDeviceName(false)
             .addServiceData(new ParcelUuid(SERVICE), payload.getBytes(StandardCharsets.UTF_8))
             .build();
-        advertiser.startAdvertising(settings, data, advertiseCallback);
-        call.resolve();
+        handler.post(() -> {
+            if (advertiseCall != call || advertiser == null) return;
+            advertiser.startAdvertising(settings, data, advertiseCallback);
+            handler.postDelayed(advertiseTimeout, 1500);
+        });
     }
 
     @PluginMethod
@@ -231,16 +289,58 @@ public class ProxyProofBlePlugin extends Plugin {
         return manager == null ? null : manager.getAdapter();
     }
 
-    private final AdvertiseCallback advertiseCallback = new AdvertiseCallback() {};
+    private final Runnable advertiseTimeout = () -> {
+        if (advertiseCall != null) {
+            advertiseCall.reject("Bluetooth did not start advertising.");
+            advertiseCall = null;
+        }
+    };
+
+    private final AdvertiseCallback advertiseCallback = new AdvertiseCallback() {
+        @Override
+        public void onStartSuccess(AdvertiseSettings settingsInEffect) {
+            handler.removeCallbacks(advertiseTimeout);
+            if (advertiseCall != null) {
+                advertiseCall.resolve();
+                advertiseCall = null;
+            }
+        }
+
+        @Override
+        public void onStartFailure(int errorCode) {
+            handler.removeCallbacks(advertiseTimeout);
+            if (advertiseCall == null) return;
+            if (errorCode == AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED) advertiseCall.resolve();
+            else advertiseCall.reject(advertiseFailure(errorCode));
+            advertiseCall = null;
+        }
+    };
+
+    private String advertiseFailure(int code) {
+        if (code == AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE) return "The Bluetooth beacon is too large for this phone.";
+        if (code == AdvertiseCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS) return "This phone is already broadcasting too many Bluetooth beacons.";
+        if (code == AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED) return "This phone cannot broadcast Bluetooth beacons.";
+        return "Bluetooth advertising failed (" + code + ").";
+    }
+
+    private String payloadFrom(android.bluetooth.le.ScanRecord record) {
+        if (record == null) return null;
+        byte[] bytes = record.getServiceData(new ParcelUuid(SERVICE));
+        if (bytes != null) return new String(bytes, StandardCharsets.UTF_8);
+        byte[] raw = record.getBytes();
+        if (raw == null) return null;
+        Matcher match = AIR.matcher(new String(raw, StandardCharsets.ISO_8859_1).toUpperCase());
+        return match.find() ? match.group() : null;
+    }
 
     private final ScanCallback scanCallback = new ScanCallback() {
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
-            if (result == null || result.getScanRecord() == null) return;
-            byte[] bytes = result.getScanRecord().getServiceData(new ParcelUuid(SERVICE));
-            if (bytes == null) return;
+            if (result == null) return;
+            String payload = payloadFrom(result.getScanRecord());
+            if (payload == null) return;
             JSObject data = new JSObject();
-            data.put("payload", new String(bytes, StandardCharsets.UTF_8));
+            data.put("payload", payload);
             data.put("rssi", result.getRssi());
             notifyListeners("beacon", data);
         }

@@ -1,6 +1,6 @@
 // The website keeps using room location. The Android app turns Bluetooth on.
 
-export const BLE_SERVICE_UUID = "f0f0c0de-7a3b-4d1e-9c8a-6b5d4e3f2a10";
+export const BLE_SERVICE_UUID = "0000f0f0-0000-1000-8000-00805f9b34fb";
 export const RSSI_IN_ROOM = -70;
 
 export type HeardBeacon = {
@@ -88,13 +88,15 @@ export async function canScan() {
 
 export async function advertiseBeacon(sessionId: string, token: string) {
   const payload = airName(sessionId, token);
-  if (payload === advertised && (webAdvert || (await nativePlugin()))) return;
-  advertised = payload;
   const native = await nativePlugin();
   if (native) {
+    if (payload === advertised) return;
     await native.startAdvertising({ payload });
+    advertised = payload;
     return;
   }
+  if (payload === advertised && webAdvert) return;
+  advertised = payload;
   const ble = bluetooth();
   if (!ble?.advertise) {
     throw new Error("This browser cannot broadcast Bluetooth. Open ProxyProof in the Android or iOS app.");

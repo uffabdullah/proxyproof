@@ -214,19 +214,22 @@ function OrganiserHome() {
   const [students, setStudents] = useState<Profile[]>([]);
   const [marks, setMarks] = useState<AttendanceRow[]>([]);
   const [devices, setDevices] = useState<Array<DeviceRow & { full_name?: string; student_code?: string | null }>>([]);
+  const [organisers, setOrganisers] = useState<Profile[]>([]);
 
   async function load() {
     await supabase.rpc("sweep_sessions");
-    const [{ data: sessionRows }, { data: studentRows }, { data: markRows }, { data: deviceRows }] = await Promise.all([
+    const [{ data: sessionRows }, { data: studentRows }, { data: markRows }, { data: deviceRows }, { data: organiserRows }] = await Promise.all([
       supabase.from("sessions").select(SESSION_COLUMNS).order("started_at", { ascending: false }),
       supabase.from("profiles").select(PROFILE_COLUMNS).eq("role", "student").order("full_name"),
       supabase.from("attendance").select(ATTENDANCE_COLUMNS),
       supabase.from("devices").select(DEVICE_COLUMNS).eq("status", "pending").order("created_at"),
+      supabase.from("profiles").select(PROFILE_COLUMNS).eq("role", "organiser"),
     ]);
     const people = new Map(((studentRows as Profile[] | null) ?? []).map((student) => [student.id, student]));
     setSessions((sessionRows as SessionRow[] | null) ?? []);
     setStudents((studentRows as Profile[] | null) ?? []);
     setMarks((markRows as AttendanceRow[] | null) ?? []);
+    setOrganisers((organiserRows as Profile[] | null) ?? []);
     setDevices(
       ((deviceRows as DeviceRow[] | null) ?? []).map((device) => ({
         ...device,
@@ -277,6 +280,17 @@ function OrganiserHome() {
     window.location.href = `/room/${data}`;
   }
 
+  async function joinHost(sessionId: string, own: boolean) {
+    if (!own) {
+      const { error: rpcError } = await supabase.rpc("join_as_host", { p_session_id: sessionId });
+      if (rpcError) {
+        setError(rpcError.message);
+        return;
+      }
+    }
+    window.location.href = `/room/${sessionId}`;
+  }
+
   async function review(id: string, approve: boolean) {
     const { error: rpcError } = await supabase.rpc("review_device", {
       p_device_id: id,
@@ -287,6 +301,8 @@ function OrganiserHome() {
   }
 
   const closed = sessions.filter((session) => session.status === "closed");
+  const liveClasses = sessions.filter((session) => session.status === "live" && new Date(session.ends_at).getTime() > Date.now());
+  const organiserName = new Map(organisers.map((person) => [person.id, person.full_name]));
   const record = useMemo(() => {
     return students.map((student) => {
       const eligible = closed.filter((session) => session.started_at >= student.created_at);
@@ -316,6 +332,28 @@ function OrganiserHome() {
   return (
     <Shell kicker="Organiser">
       <h1 className="serif mt-3 text-5xl md:text-6xl">Start a beacon.</h1>
+      <section className="mt-8">
+        <h2 className="serif text-3xl">Live classes</h2>
+        <div className="mt-4 space-y-3">
+          {liveClasses.length === 0 && <p className="text-ink/60">No class is live right now.</p>}
+          {liveClasses.map((session) => {
+            const own = session.organiser_id === profile?.id;
+            return (
+              <div key={session.id} className="panel flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                <div>
+                  <p className="font-medium">{session.title}</p>
+                  <p className="text-sm text-ink/50">
+                    {session.course} · {own ? "Your class" : organiserName.get(session.organiser_id) || "Another organiser"}
+                  </p>
+                </div>
+                <button type="button" className="btn btn-ink px-4 py-2 text-sm" onClick={() => joinHost(session.id, own)}>
+                  {own ? "Open" : "Join as co-host"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </section>
       <form onSubmit={start} className="panel mt-8 grid gap-4 p-5 md:grid-cols-2">
         <label>
           <span className="eyebrow text-ink/50">Session</span>
@@ -390,6 +428,10 @@ function OrganiserHome() {
                   <Link href={`/room/${session.id}`} className="btn btn-ghost px-4 py-2 text-sm">
                     {session.status === "live" ? "Open beacon" : "View"}
                   </Link>
+                ) : session.status === "live" ? (
+                  <button type="button" className="btn btn-ghost px-4 py-2 text-sm" onClick={() => joinHost(session.id, false)}>
+                    Join as co-host
+                  </button>
                 ) : (
                   <span className="text-sm capitalize text-ink/50">{session.status}</span>
                 )}

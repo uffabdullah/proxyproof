@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { deviceLabel, getDeviceSecret } from "@/lib/device";
 import { bleScanSupported, listenForRssi, watchRoom, type Fix } from "@/lib/geo";
 import { inNativeApp, listenForBeacons, RSSI_IN_ROOM } from "@/lib/ble";
+import { clearPhoneAlert, phoneAlert } from "@/lib/phone";
 import { playForReason, unlockSound } from "@/lib/sound";
 import { PROFILE_COLUMNS, SESSION_COLUMNS, type MarkResult, type Profile } from "@/lib/types";
 
@@ -61,6 +62,34 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
   const tokens = useRef<Record<string, { token: string; at: number }>>({});
   const heardReason = useRef<Record<string, string>>({});
   const stopBle = useRef<null | (() => void)>(null);
+
+  function remember(key: string, result: MarkResult) {
+    const note =
+      result.reason === "marked" || result.reason === "already" || result.reason === "present"
+        ? "present"
+        : result.reason;
+    if (note && note !== heardReason.current[key]) {
+      playForReason(result.reason);
+      heardReason.current[key] = note;
+      const label = result.title || result.course || "this class";
+      if (note === "present") {
+        void clearPhoneAlert(4103);
+        void phoneAlert({ id: 4104, title: "You're marked present", body: `${label} confirmed your attendance.` });
+      } else if (note === "grace") {
+        const seconds = result.seconds ?? 30;
+        void phoneAlert({
+          id: 4103,
+          title: "You're outside the room",
+          body: `Get back in range. ${seconds} seconds left.`,
+          until: Date.now() + seconds * 1000,
+        });
+      } else if (note === "absent") {
+        void clearPhoneAlert(4103);
+        void phoneAlert({ id: 4105, title: "Marked absent", body: `You stayed outside ${label}.` });
+      }
+    }
+    return result;
+  }
 
   async function bindDevice() {
     setDeviceError(null);
@@ -200,11 +229,7 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
               message: `${result.seconds ?? 30}s to get back in the room before this mark becomes an absence.`,
             };
           }
-          if (result.reason && result.reason !== heardReason.current[session.id]) {
-            playForReason(result.reason);
-            heardReason.current[session.id] = result.reason;
-          }
-          next[session.id] = { ...result, title: session.title, course: session.course };
+          next[session.id] = remember(session.id, { ...result, title: session.title, course: session.course });
         }
       }
       if (!stop.current) setStatuses(next);
@@ -281,11 +306,7 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
             if (result.reason === "present" || result.reason === "marked") {
               result = { ...result, message: `In the room · ${beacon.rssi} dBm.` };
             }
-            if (result.reason && result.reason !== heardReason.current[key]) {
-              playForReason(result.reason);
-              heardReason.current[key] = result.reason;
-            }
-            next[key] = result;
+            next[key] = remember(key, result);
           }
         }
         for (const [sessionId, prefix] of Object.entries(tracked)) {
@@ -303,11 +324,7 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
             result.message = `${result.seconds ?? 30}s to get back in Bluetooth range.`;
           }
           if (result.reason === "absent" || result.reason === "closed") delete tracked[sessionId];
-          if (result.reason && result.reason !== heardReason.current[sessionId]) {
-            playForReason(result.reason);
-            heardReason.current[sessionId] = result.reason;
-          }
-          next[sessionId] = result;
+          next[sessionId] = remember(sessionId, result);
         }
         if (!stop.current) setStatuses(next);
         if (!stop.current) timer.current = window.setTimeout(tick, 2000);

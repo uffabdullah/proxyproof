@@ -41,7 +41,7 @@ export type AttendanceRow = {
   distance_meters: number | null;
   method: "auto" | "manual";
   token_epoch: number | null;
-  presence: "present" | "grace" | "absent";
+  presence: "present" | "grace" | "absent" | "joined";
   last_seen_at: string | null;
   grace_until: string | null;
   absent_at: string | null;

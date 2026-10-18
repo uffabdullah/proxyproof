@@ -12,10 +12,17 @@
 
 html {
   background: #efe7dc;
+  overscroll-behavior: none;
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 body {
   min-height: 100vh;
+  overscroll-behavior: none;
+  overflow-x: hidden;
+  max-width: 100%;
+  touch-action: manipulation;
   background:
     radial-gradient(1200px 600px at 90% -10%, rgba(255, 77, 58, 0.16), transparent 55%),
     radial-gradient(900px 500px at -10% 20%, rgba(30, 59, 50, 0.08), transparent 50%),

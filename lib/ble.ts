@@ -1,7 +1,9 @@
 // The website keeps using room location. The Android app turns Bluetooth on.
 
+import { logDebug } from "@/lib/debug";
+
 export const BLE_SERVICE_UUID = "0000f0f0-0000-1000-8000-00805f9b34fb";
-export const RSSI_IN_ROOM = -70;
+export const RSSI_IN_ROOM = -68;
 
 export type HeardBeacon = {
   sessionPrefix: string;
@@ -93,6 +95,7 @@ export async function advertiseBeacon(sessionId: string, token: string) {
     if (payload === advertised) return;
     await native.startAdvertising({ payload });
     advertised = payload;
+    logDebug("bluetooth", "Advertising started");
     return;
   }
   if (payload === advertised && webAdvert) return;
@@ -130,6 +133,7 @@ export async function listenForBeacons(onBeacon: (beacon: HeardBeacon) => void) 
       emitPayload(data.payload || data.name, data.rssi, onBeacon);
     });
     await native.startScan();
+    logDebug("bluetooth", "Scanning for a class beacon");
     return async () => {
       await native.stopScan().catch(() => undefined);
       await handle.remove();

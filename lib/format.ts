@@ -63,6 +63,8 @@ export async function downloadCsv(filename: string, rows: string[][]) {
 export function statusCopy(reason: string, distance?: number | string | null) {
   const meters = distance == null || distance === "" ? null : Math.round(Number(distance));
   switch (reason) {
+    case "joined":
+      return "You joined this class. The organiser can see you. Stay inside the room to be marked present.";
     case "marked":
     case "present":
       return "You're in the room. Stay until the session ends.";

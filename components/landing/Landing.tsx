@@ -6,7 +6,70 @@ import { useEffect, useState } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import Lenis from "lenis";
+import { inNativeApp } from "@/lib/ble";
 import { createClient } from "@/lib/supabase/client";
+
+function startLandingMotion() {
+  gsap.registerPlugin(ScrollTrigger);
+  const lenis = new Lenis({ lerp: 0.075, wheelMultiplier: 0.9 });
+  lenis.on("scroll", ScrollTrigger.update);
+  const tick = (time: number) => lenis.raf(time * 1000);
+  gsap.ticker.add(tick);
+  gsap.ticker.lagSmoothing(0);
+  const ctx = gsap.context(() => {
+    gsap.from(".rise", {
+      y: 32,
+      duration: 1.15,
+      stagger: 0.08,
+      ease: "power4.out",
+      clearProps: "transform",
+    });
+    gsap.to(".phone-drift", {
+      y: -56,
+      ease: "none",
+      scrollTrigger: { trigger: ".hero", start: "top top", end: "bottom top", scrub: 1.4 },
+    });
+    gsap.utils.toArray<HTMLElement>(".chapter").forEach((el) => {
+      gsap.from(el, {
+        scrollTrigger: { trigger: el, start: "top 86%" },
+        y: 36,
+        duration: 1.05,
+        ease: "power3.out",
+        clearProps: "transform",
+      });
+    });
+    gsap.from(".requirement", {
+      scrollTrigger: { trigger: ".requirement-grid", start: "top 80%" },
+      y: 28,
+      duration: 0.9,
+      stagger: 0.08,
+      ease: "power3.out",
+      clearProps: "transform",
+    });
+    gsap.from(".roster-copy, .roster-card", {
+      scrollTrigger: { trigger: "#roster", start: "top 78%" },
+      y: 40,
+      duration: 1.1,
+      stagger: 0.12,
+      ease: "power3.out",
+      clearProps: "transform",
+    });
+    gsap.from(".site-footer .footer-piece", {
+      scrollTrigger: { trigger: ".site-footer", start: "top 90%" },
+      y: 22,
+      duration: 0.9,
+      stagger: 0.08,
+      ease: "power3.out",
+      clearProps: "transform",
+    });
+  });
+  return () => {
+    ctx.revert();
+    gsap.ticker.remove(tick);
+    lenis.destroy();
+    ScrollTrigger.getAll().forEach((trigger) => trigger.kill());
+  };
+}
 
 const BeaconScene = dynamic(() => import("./BeaconScene"), { ssr: false });
 const RiveMark = dynamic(() => import("./RiveMark"), { ssr: false });
@@ -69,74 +132,17 @@ export default function Landing() {
   }, []);
 
   useEffect(() => {
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) return;
-
-    gsap.registerPlugin(ScrollTrigger);
-    const lenis = new Lenis({ lerp: 0.075, wheelMultiplier: 0.9 });
-    lenis.on("scroll", ScrollTrigger.update);
-    const tick = (time: number) => lenis.raf(time * 1000);
-    gsap.ticker.add(tick);
-    gsap.ticker.lagSmoothing(0);
-
-    const ctx = gsap.context(() => {
-      gsap.from(".rise", {
-        y: 32,
-        duration: 1.15,
-        stagger: 0.08,
-        ease: "power4.out",
-        clearProps: "transform",
-      });
-      gsap.to(".phone-drift", {
-        y: -56,
-        ease: "none",
-        scrollTrigger: {
-          trigger: ".hero",
-          start: "top top",
-          end: "bottom top",
-          scrub: 1.4,
-        },
-      });
-      gsap.utils.toArray<HTMLElement>(".chapter").forEach((el) => {
-        gsap.from(el, {
-          scrollTrigger: { trigger: el, start: "top 86%" },
-          y: 36,
-          duration: 1.05,
-          ease: "power3.out",
-          clearProps: "transform",
-        });
-      });
-      gsap.from(".requirement", {
-        scrollTrigger: { trigger: ".requirement-grid", start: "top 80%" },
-        y: 28,
-        duration: 0.9,
-        stagger: 0.08,
-        ease: "power3.out",
-        clearProps: "transform",
-      });
-      gsap.from(".roster-copy, .roster-card", {
-        scrollTrigger: { trigger: "#roster", start: "top 78%" },
-        y: 40,
-        duration: 1.1,
-        stagger: 0.12,
-        ease: "power3.out",
-        clearProps: "transform",
-      });
-      gsap.from(".site-footer .footer-piece", {
-        scrollTrigger: { trigger: ".site-footer", start: "top 90%" },
-        y: 22,
-        duration: 0.9,
-        stagger: 0.08,
-        ease: "power3.out",
-        clearProps: "transform",
-      });
+    let cancel = false;
+    let cleanup = () => {};
+    inNativeApp().then((native) => {
+      if (cancel || native) return;
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduce) return;
+      cleanup = startLandingMotion();
     });
-
     return () => {
-      ctx.revert();
-      gsap.ticker.remove(tick);
-      lenis.destroy();
-      ScrollTrigger.getAll().forEach((trigger) => trigger.kill());
+      cancel = true;
+      cleanup();
     };
   }, []);
 

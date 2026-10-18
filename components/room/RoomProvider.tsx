@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { deviceLabel, getDeviceSecret } from "@/lib/device";
 import { bleScanSupported, listenForRssi, watchRoom, type Fix } from "@/lib/geo";
-import { inNativeApp, listenForBeacons, RSSI_IN_ROOM } from "@/lib/ble";
+import { inNativeApp, listenForBeacons } from "@/lib/ble";
+import { logDebug } from "@/lib/debug";
 import { clearPhoneAlert, phoneAlert } from "@/lib/phone";
 import { playForReason, unlockSound } from "@/lib/sound";
 import { PROFILE_COLUMNS, SESSION_COLUMNS, type MarkResult, type Profile } from "@/lib/types";
@@ -275,7 +276,7 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
         const seen = new Set<string>();
         const next: Record<string, MarkResult> = {};
         for (const beacon of fresh) {
-          const strong = beacon.rssi >= RSSI_IN_ROOM && beacon.rssi <= 0;
+          if (beacon.rssi < -85 || beacon.rssi > 0) continue;
           const args = {
             p_secret: getDeviceSecret(),
             p_session_id: null,
@@ -284,14 +285,15 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
             p_rssi: beacon.rssi,
             p_session_prefix: beacon.sessionPrefix,
           };
-          const marked = strong ? await supabase.rpc("auto_mark", args) : await supabase.rpc("presence_ping", args);
+          const marked = await supabase.rpc("auto_mark", args);
           let result = (marked.data ?? { ok: false, reason: "error" }) as MarkResult;
           let error = marked.error;
-          if (!error && strong && (result.reason === "marked" || result.reason === "already" || result.reason === "present")) {
+          if (!error && result.reason !== "present" && result.reason !== "marked") {
             const ping = await supabase.rpc("presence_ping", args);
             if (!ping.error && ping.data) result = ping.data as MarkResult;
             else if (ping.error) error = ping.error;
           }
+          logDebug("attendance", `${result.reason || "error"} · ${beacon.rssi} dBm`, error?.message || result.session_id);
           const key = result.session_id || beacon.sessionPrefix;
           if (result.session_id) {
             tracked[result.session_id] = beacon.sessionPrefix;

@@ -16,17 +16,18 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.ParcelUuid;
+import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import java.io.File;
 import java.io.FileOutputStream;
 import com.getcapacitor.JSObject;
-import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -58,16 +59,36 @@ public class ProxyProofBlePlugin extends Plugin {
     private BluetoothLeScanner scanner;
     private PluginCall pending;
     private PluginCall advertiseCall;
+    private boolean bluetoothAsked;
     private final Handler handler = new Handler(Looper.getMainLooper());
+
+    private boolean osGranted(String permission) {
+        return ContextCompat.checkSelfPermission(getContext(), permission) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean bluetoothReady() {
+        if (Build.VERSION.SDK_INT >= 31) {
+            return osGranted(Manifest.permission.BLUETOOTH_SCAN)
+                && osGranted(Manifest.permission.BLUETOOTH_CONNECT)
+                && osGranted(Manifest.permission.BLUETOOTH_ADVERTISE);
+        }
+        return Build.VERSION.SDK_INT < 23 || osGranted(Manifest.permission.ACCESS_FINE_LOCATION);
+    }
+
+    private boolean notesReady() {
+        return Build.VERSION.SDK_INT < 33 || osGranted(Manifest.permission.POST_NOTIFICATIONS);
+    }
 
     @PluginMethod
     public void prepare(PluginCall call) {
-        if (Build.VERSION.SDK_INT >= 31 && getPermissionState("bluetooth") != PermissionState.GRANTED) {
-            requestPermissionForAlias("bluetooth", call, "prepareCallback");
-            return;
-        }
-        if (Build.VERSION.SDK_INT < 31 && getPermissionState("location") != PermissionState.GRANTED) {
-            requestPermissionForAlias("location", call, "prepareCallback");
+        if (!bluetoothReady()) {
+            if (bluetoothAsked) {
+                askNotesOrFinish(call);
+                return;
+            }
+            bluetoothAsked = true;
+            if (Build.VERSION.SDK_INT >= 31) requestPermissionForAlias("bluetooth", call, "prepareCallback");
+            else requestPermissionForAlias("location", call, "prepareCallback");
             return;
         }
         askNotesOrFinish(call);
@@ -75,19 +96,21 @@ public class ProxyProofBlePlugin extends Plugin {
 
     @PermissionCallback
     private void prepareCallback(PluginCall call) {
-        if (Build.VERSION.SDK_INT >= 31 && getPermissionState("bluetooth") != PermissionState.GRANTED) {
+        if (!bluetoothReady()) {
             call.reject("Bluetooth permission is required.");
-            return;
-        }
-        if (Build.VERSION.SDK_INT < 31 && getPermissionState("location") != PermissionState.GRANTED) {
-            call.reject("Location permission is required for Bluetooth scanning.");
             return;
         }
         askNotesOrFinish(call);
     }
 
     private void askNotesOrFinish(PluginCall call) {
-        if (Build.VERSION.SDK_INT >= 33 && getPermissionState("notifications") != PermissionState.GRANTED) {
+        if (!notesReady()) {
+            SharedPreferences prefs = getContext().getSharedPreferences("proxyproof", Context.MODE_PRIVATE);
+            if (prefs.getBoolean("notes_asked", false)) {
+                finishPrepare(call);
+                return;
+            }
+            prefs.edit().putBoolean("notes_asked", true).apply();
             requestPermissionForAlias("notifications", call, "notesCallback");
             return;
         }
@@ -104,7 +127,7 @@ public class ProxyProofBlePlugin extends Plugin {
         JSObject ret = new JSObject();
         BluetoothAdapter adapter = adapter();
         ret.put("bluetooth", adapter != null && adapter.isEnabled());
-        ret.put("notifications", Build.VERSION.SDK_INT < 33 || getPermissionState("notifications") == PermissionState.GRANTED);
+        ret.put("notifications", notesReady());
         call.resolve(ret);
     }
 
@@ -143,7 +166,7 @@ public class ProxyProofBlePlugin extends Plugin {
     }
 
     private void showReady() {
-        if (Build.VERSION.SDK_INT >= 33 && getPermissionState("notifications") != PermissionState.GRANTED) return;
+        if (!notesReady()) return;
         NotificationManager manager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager == null) return;
         String channelId = "proxyproof";
@@ -266,16 +289,21 @@ public class ProxyProofBlePlugin extends Plugin {
     }
 
     private boolean ensure(PluginCall call) {
-        if (Build.VERSION.SDK_INT < 31) return true;
-        if (getPermissionState("bluetooth") == PermissionState.GRANTED) return true;
+        if (bluetoothReady()) return true;
+        if (bluetoothAsked) {
+            call.reject("Allow Bluetooth in system settings, then reopen the class.");
+            return false;
+        }
+        bluetoothAsked = true;
         pending = call;
-        requestPermissionForAlias("bluetooth", call, "permsCallback");
+        if (Build.VERSION.SDK_INT >= 31) requestPermissionForAlias("bluetooth", call, "permsCallback");
+        else requestPermissionForAlias("location", call, "permsCallback");
         return false;
     }
 
     @PermissionCallback
     private void permsCallback(PluginCall call) {
-        if (getPermissionState("bluetooth") != PermissionState.GRANTED) {
+        if (!bluetoothReady()) {
             call.reject("Bluetooth permission is required.");
             return;
         }

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Instrument_Serif, Outfit } from "next/font/google";
+import AppChrome from "@/components/AppChrome";
 import AppPermissions from "@/components/AppPermissions";
 import Cursor from "@/components/Cursor";
 import "./globals.css";
@@ -32,6 +33,8 @@ export const viewport: Viewport = {
   themeColor: "#efe7dc",
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -40,6 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <Cursor />
         <AppPermissions />
+        <AppChrome />
         {children}
       </body>
     </html>

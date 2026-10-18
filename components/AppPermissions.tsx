@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { inNativeApp } from "@/lib/ble";
+import { logDebug } from "@/lib/debug";
+
+let prepareOnce: Promise<void> | null = null;
 
 export default function AppPermissions() {
   const [note, setNote] = useState<string | null>(null);
@@ -10,16 +13,24 @@ export default function AppPermissions() {
     let ignore = false;
     inNativeApp().then(async (native) => {
       if (!native || ignore) return;
+      if (!prepareOnce) {
+        prepareOnce = (async () => {
+          const { registerPlugin } = await import("@capacitor/core");
+          const phone = registerPlugin<{
+            prepare: () => Promise<{ bluetooth?: boolean; notifications?: boolean }>;
+          }>("ProxyProofBle");
+          const result = await phone.prepare();
+          logDebug("permissions", result.bluetooth ? "Bluetooth is allowed" : "Bluetooth is off", result);
+        })();
+      }
       try {
-        const { registerPlugin } = await import("@capacitor/core");
-        const phone = registerPlugin<{
-          prepare: () => Promise<{ bluetooth?: boolean; notifications?: boolean }>;
-        }>("ProxyProofBle");
-        const result = await phone.prepare();
-        if (ignore) return;
-        setNote(result.bluetooth ? "Bluetooth is on" : "Turn Bluetooth on to mark attendance");
+        await prepareOnce;
+        if (!ignore) setNote("Bluetooth checked");
       } catch (error) {
-        if (!ignore) setNote(error instanceof Error ? error.message : "Bluetooth permission was not granted");
+        prepareOnce = null;
+        const message = error instanceof Error ? error.message : "Bluetooth permission was not granted";
+        logDebug("permissions", message);
+        if (!ignore) setNote(message);
       }
     });
     return () => {
@@ -29,7 +40,7 @@ export default function AppPermissions() {
 
   if (!note) return null;
   return (
-    <p className="fixed bottom-4 left-1/2 z-40 max-w-[90vw] -translate-x-1/2 rounded-full bg-ink px-4 py-2 text-center text-sm text-foam">
+    <p className="fixed top-3 left-1/2 z-40 max-w-[70vw] -translate-x-1/2 rounded-full bg-ink px-4 py-2 text-center text-sm text-foam">
       {note}
     </p>
   );

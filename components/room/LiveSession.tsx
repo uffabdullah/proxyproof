@@ -6,6 +6,9 @@ import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { ago, downloadCsv, formatRemaining, statusCopy } from "@/lib/format";
 import { advertiseBeacon, inNativeApp, stopBeacon } from "@/lib/ble";
+import { logDebug } from "@/lib/debug";
+import { getDeviceSecret } from "@/lib/device";
+import { phoneAlert } from "@/lib/phone";
 import {
   ATTENDANCE_COLUMNS,
   PROFILE_COLUMNS,
@@ -16,6 +19,8 @@ import {
 } from "@/lib/types";
 import { useRoom } from "./RoomProvider";
 import Shell from "./Shell";
+
+const joinedNotified = new Set<string>();
 
 export default function LiveSession() {
   const params = useParams<{ id: string }>();
@@ -32,6 +37,7 @@ export default function LiveSession() {
   const [epoch, setEpoch] = useState<number | null>(null);
   const [missing, setMissing] = useState(false);
   const [cohost, setCohost] = useState(false);
+  const [joinNote, setJoinNote] = useState<string | null>(null);
 
   async function load() {
     const { data } = await supabase.from("sessions").select(SESSION_COLUMNS).eq("id", id).maybeSingle();
@@ -83,6 +89,46 @@ export default function LiveSession() {
   }, [id, profile, supabase]);
 
   useEffect(() => {
+    if (!profile || profile.role !== "student" || !session || session.status !== "live") return;
+    let ignore = false;
+    const supabaseClient = supabase;
+    supabaseClient
+      .rpc("join_class", { p_session_id: session.id, p_secret: getDeviceSecret() })
+      .then(({ data, error: rpcError }) => {
+        if (ignore) return;
+        const result = (data ?? {}) as { ok?: boolean; reason?: string; title?: string };
+        logDebug("join", rpcError ? rpcError.message : result.reason || "no response", result);
+        if (rpcError) {
+          setJoinNote(rpcError.message);
+          return;
+        }
+        if (result.reason === "pending") {
+          setJoinNote("This phone is waiting for an organiser to approve it.");
+          return;
+        }
+        if (result.reason === "joined" || result.reason === "present" || result.reason === "already") {
+          setJoinNote(result.reason === "present" ? "You're marked present." : "You joined this class. The organiser can see you.");
+          if (result.reason === "joined" && !joinedNotified.has(session.id)) {
+            joinedNotified.add(session.id);
+            void phoneAlert({
+              id: 4106,
+              title: "You joined the class",
+              body: `${result.title || session.title} can see you on the roster.`,
+            });
+          }
+        } else if (result.reason) {
+          setJoinNote(statusCopy(result.reason));
+        }
+        load();
+      });
+    return () => {
+      ignore = true;
+    };
+    // load refreshes the roster after the join is recorded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id, profile?.role, session?.id, session?.status, supabase]);
+
+  useEffect(() => {
     if (!session || session.status !== "live" || profile?.id !== session.organiser_id) return;
     let stop = false;
     const channel = supabase.channel("proxyproof-beacons");
@@ -103,12 +149,14 @@ export default function LiveSession() {
       setError(null);
       if (!body.token) return;
       if (await inNativeApp()) {
-        try {
-          await advertiseBeacon(session.id, body.token);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "Bluetooth advertising did not start.";
-          setError(message);
-        }
+          try {
+            await advertiseBeacon(session.id, body.token);
+            logDebug("bluetooth", "Beacon is broadcasting");
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "Bluetooth advertising did not start.";
+            logDebug("bluetooth", message);
+            setError(message);
+          }
         return;
       }
       await channel.send({
@@ -241,8 +289,9 @@ export default function LiveSession() {
 
   if (!canManage) {
     const mineStatus = statuses[session.id];
-    const confirmed = mineStatus && ["marked", "present", "already"].includes(mineStatus.reason);
-    const warning = mineStatus?.reason === "grace" || mineStatus?.reason === "weak" || mineStatus?.reason === "far";
+    const mineRow = marks.find((mark) => mark.student_id === profile.id);
+    const confirmed = mineRow?.presence === "present" || (mineStatus && ["marked", "present", "already"].includes(mineStatus.reason));
+    const warning = mineRow?.presence === "grace" || mineStatus?.reason === "grace" || mineStatus?.reason === "weak" || mineStatus?.reason === "far";
     return (
       <Shell kicker={session.course}>
         <h1 className="serif mt-3 text-5xl">{session.title}</h1>
@@ -251,11 +300,15 @@ export default function LiveSession() {
             This phone is waiting for an organiser to approve it. Attendance cannot be marked until then.
           </p>
         )}
-        {confirmed && (
+        {(confirmed || mineRow?.presence === "joined" || joinNote) && !warning && (
           <div className="mt-6 max-w-lg rounded-3xl bg-ink px-5 py-6 text-foam">
-            <p className="eyebrow text-foam/60">Confirmed</p>
-            <p className="serif mt-2 text-4xl">You&apos;re marked present.</p>
-            <p className="mt-2 text-foam/70">{session.course} has you on the roster. Stay until the class ends.</p>
+            <p className="eyebrow text-foam/60">{confirmed ? "Present" : "Joined"}</p>
+            <p className="serif mt-2 text-4xl">{confirmed ? "You're marked present." : "You joined this class."}</p>
+            <p className="mt-2 text-foam/70">
+              {confirmed
+                ? `${session.course} has you on the roster. Stay until the class ends.`
+                : joinNote || "The organiser can see your name. Stay inside the room to be marked present."}
+            </p>
           </div>
         )}
         {warning && (
@@ -265,7 +318,7 @@ export default function LiveSession() {
             <p className="mt-2">Get back in range before this mark becomes an absence. The same countdown is on your notification.</p>
           </div>
         )}
-        {!confirmed && !warning && (
+        {!confirmed && !warning && !joinNote && mineRow?.presence !== "joined" && (
           <p className="mt-4 max-w-lg text-lg text-ink/70">
             {live
               ? mineStatus
@@ -275,7 +328,7 @@ export default function LiveSession() {
           </p>
         )}
         {ble.rssi != null && (
-          <p className="mt-4 text-sm text-ink/60">Bluetooth signal {ble.rssi} dBm{ble.rssi >= -70 ? " · inside the room" : " · outside the room"}</p>
+          <p className="mt-4 text-sm text-ink/60">Bluetooth signal {ble.rssi} dBm{ble.rssi >= -68 ? " · inside the room" : " · outside the room"}</p>
         )}
         <Link href="/room" className="btn btn-ink mt-8">Back to your room</Link>
       </Shell>
@@ -319,6 +372,26 @@ export default function LiveSession() {
           Leave this screen open. A student who walks out has 30 seconds to return. After that they are marked absent.
         </p>
       )}
+
+      <section className="mt-8">
+        <h2 className="serif text-3xl">Joined</h2>
+        <div className="mt-3 divide-y divide-ink/10 border-y border-ink/10">
+          {marks.filter((mark) => mark.presence === "joined").length === 0 && (
+            <p className="py-6 text-ink/60">No one has joined yet.</p>
+          )}
+          {marks.filter((mark) => mark.presence === "joined").map((mark) => {
+            const student = people.get(mark.student_id);
+            return (
+              <div key={mark.id} className="flex flex-wrap items-center justify-between gap-3 py-4">
+                <div>
+                  <p className="font-medium">{student?.full_name || "Student"}</p>
+                  <p className="text-sm text-ink/50">{student?.student_code} · joined, waiting for the room signal</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
       <section className="mt-8">
         <h2 className="serif text-3xl">In the room</h2>

@@ -16,6 +16,8 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const [show, setShow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [code, setCode] = useState("");
+  const [awaitingCode, setAwaitingCode] = useState(false);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -25,26 +27,28 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
     const cleanEmail = email.trim().toLowerCase();
 
     if (mode === "signup") {
-      const { data, error: signError } = await supabase.auth.signUp({
-        email: cleanEmail,
-        password,
-        options: {
-          data: { full_name: fullName.trim(), role },
-        },
-      });
-      if (signError) {
+      const taken = await supabase.rpc("email_taken", { p_email: cleanEmail });
+      if (taken.error) {
         setPending(false);
-        setError(signError.message);
+        setError(taken.error.message);
         return;
       }
-      if (!data.session) {
-        const second = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
-        if (second.error) {
-          setPending(false);
-          setError(second.error.message);
-          return;
-        }
+      if (taken.data) {
+        setPending(false);
+        setError("That email already has an account. Sign in, or reset the password.");
+        return;
       }
+      const { error: otpError } = await supabase.auth.signInWithOtp({
+        email: cleanEmail,
+        options: { shouldCreateUser: true, data: { full_name: fullName.trim(), role } },
+      });
+      setPending(false);
+      if (otpError) {
+        setError(otpError.message);
+        return;
+      }
+      setAwaitingCode(true);
+      return;
     } else {
       const { error: signError } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
@@ -63,6 +67,42 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
 
     router.push(params.get("next") || "/room");
     router.refresh();
+  }
+
+  async function confirmCode(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setPending(true);
+    const supabase = createClient();
+    const cleanEmail = email.trim().toLowerCase();
+    const { error: verifyError } = await supabase.auth.verifyOtp({
+      email: cleanEmail,
+      token: code.trim(),
+      type: "email",
+    });
+    if (verifyError) {
+      setPending(false);
+      setError(verifyError.message);
+      return;
+    }
+    const { error: passwordError } = await supabase.auth.updateUser({ password });
+    setPending(false);
+    if (passwordError) {
+      setError(passwordError.message);
+      return;
+    }
+    router.push(params.get("next") || "/room");
+    router.refresh();
+  }
+
+  async function resendCode() {
+    setError(null);
+    const supabase = createClient();
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email: email.trim().toLowerCase(),
+      options: { shouldCreateUser: true, data: { full_name: fullName.trim(), role } },
+    });
+    setError(otpError ? otpError.message : "A new code is on its way.");
   }
 
   return (
@@ -92,6 +132,33 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
             {mode === "signup" ? "Join the room." : "Sign in."}
           </h2>
 
+          {awaitingCode ? (
+            <form onSubmit={confirmCode} className="mt-8 space-y-4">
+              <p className="text-sm text-ink/70">
+                Enter the 6-digit code sent to {email}. An address that does not exist will not receive it.
+              </p>
+              <label className="block">
+                <span className="eyebrow text-ink/50">Email code</span>
+                <input
+                  className="field mt-2 tracking-[0.3em]"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={code}
+                  onChange={(event) => setCode(event.target.value)}
+                  required
+                  minLength={6}
+                  maxLength={8}
+                />
+              </label>
+              {error && <p className="rounded-2xl bg-coral/10 px-4 py-3 text-sm">{error}</p>}
+              <button className="btn btn-ink w-full" disabled={pending}>
+                {pending ? "Checking the code…" : "Verify email"}
+              </button>
+              <button type="button" className="text-sm underline" onClick={resendCode}>
+                Send the code again
+              </button>
+            </form>
+          ) : (
           <form onSubmit={onSubmit} className="mt-8 space-y-4">
             {mode === "signup" && (
               <>
@@ -153,9 +220,10 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
             </label>
             {error && <p className="rounded-2xl bg-coral/10 px-4 py-3 text-sm">{error}</p>}
             <button className="btn btn-ink w-full" disabled={pending}>
-              {pending ? "One moment…" : mode === "signup" ? "Create account" : "Sign in"}
+              {pending ? "One moment…" : mode === "signup" ? "Send email code" : "Sign in"}
             </button>
           </form>
+          )}
 
           <p className="mt-6 text-sm text-ink/70">
             {mode === "signup" ? (
@@ -165,6 +233,8 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
             ) : (
               <>
                 New here? <Link href={params.get("next") ? `/signup?next=${encodeURIComponent(params.get("next") || "")}` : "/signup"} className="underline">Create an account</Link>
+                <span className="mx-2">·</span>
+                <Link href="/forgot" className="underline">Forgot password</Link>
               </>
             )}
           </p>

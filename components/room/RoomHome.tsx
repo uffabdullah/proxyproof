@@ -186,7 +186,9 @@ function StudentHome() {
                 <p className="text-sm text-ink/50">{session.course} · {formatWhen(session.started_at)}</p>
               </div>
               <p className="text-sm">
-                {!session.marked_at || session.presence === "absent"
+                  {session.presence === "joined"
+                  ? "Joined"
+                  : !session.marked_at || session.presence === "absent"
                   ? "Absent"
                   : session.presence === "grace"
                     ? "Leaving"
@@ -205,8 +207,8 @@ function OrganiserHome() {
   const supabase = useMemo(() => createClient(), []);
   const [title, setTitle] = useState("");
   const [course, setCourse] = useState("");
-  const [minutes, setMinutes] = useState(5);
-  const [radius, setRadius] = useState(50);
+  const [minutes, setMinutes] = useState(40);
+  const [radius, setRadius] = useState(5);
   const [allowManualOnly, setAllowManualOnly] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -275,6 +277,27 @@ function OrganiserHome() {
     setPending(false);
     if (rpcError || !data) {
       setError(rpcError?.message || "The session did not start.");
+      return;
+    }
+    window.location.href = `/room/${data}`;
+  }
+
+  async function quickStart() {
+    setError(null);
+    setPending(true);
+    const fix = await currentFix().catch(() => null);
+    const when = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const { data, error: rpcError } = await supabase.rpc("start_session", {
+      p_title: `Class ${when}`,
+      p_course: "Class",
+      p_duration: 30 * 60,
+      p_lat: fix?.lat ?? null,
+      p_lng: fix?.lng ?? null,
+      p_radius: 5,
+    });
+    setPending(false);
+    if (rpcError || !data) {
+      setError(rpcError?.message || "The class did not start.");
       return;
     }
     window.location.href = `/room/${data}`;
@@ -354,6 +377,9 @@ function OrganiserHome() {
           })}
         </div>
       </section>
+      <button type="button" className="btn btn-coral mt-6" onClick={quickStart} disabled={pending}>
+        {pending ? "Starting…" : "Quick start a class"}
+      </button>
       <form onSubmit={start} className="panel mt-8 grid gap-4 p-5 md:grid-cols-2">
         <label>
           <span className="eyebrow text-ink/50">Session</span>
@@ -366,17 +392,16 @@ function OrganiserHome() {
         <label>
           <span className="eyebrow text-ink/50">Duration</span>
           <select className="field mt-2" value={minutes} onChange={(event) => setMinutes(Number(event.target.value))}>
-            <option value={5}>5 minutes</option>
-            <option value={10}>10 minutes</option>
-            <option value={15}>15 minutes</option>
+            <option value={30}>30 minutes</option>
+            <option value={40}>40 minutes</option>
+            <option value={50}>50 minutes</option>
           </select>
         </label>
         <label>
           <span className="eyebrow text-ink/50">Room radius</span>
           <select className="field mt-2" value={radius} onChange={(event) => setRadius(Number(event.target.value))}>
-            <option value={30}>30 metres</option>
-            <option value={50}>50 metres</option>
-            <option value={80}>80 metres</option>
+            <option value={3}>3 metres</option>
+            <option value={5}>5 metres</option>
           </select>
         </label>
         <label className="flex items-center gap-3 text-sm md:col-span-2">

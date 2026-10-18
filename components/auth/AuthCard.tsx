@@ -160,11 +160,11 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
           <p className="mt-6 text-sm text-ink/70">
             {mode === "signup" ? (
               <>
-                Already have an account? <Link href="/login" className="underline">Sign in</Link>
+                Already have an account? <Link href={params.get("next") ? `/login?next=${encodeURIComponent(params.get("next") || "")}` : "/login"} className="underline">Sign in</Link>
               </>
             ) : (
               <>
-                New here? <Link href="/signup" className="underline">Create an account</Link>
+                New here? <Link href={params.get("next") ? `/signup?next=${encodeURIComponent(params.get("next") || "")}` : "/signup"} className="underline">Create an account</Link>
               </>
             )}
           </p>

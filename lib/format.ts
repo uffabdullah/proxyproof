@@ -26,7 +26,7 @@ export function formatWhen(iso: string) {
   });
 }
 
-export function downloadCsv(filename: string, rows: string[][]) {
+export async function downloadCsv(filename: string, rows: string[][]) {
   const csv = rows
     .map((row) =>
       row
@@ -38,12 +38,25 @@ export function downloadCsv(filename: string, rows: string[][]) {
         .join(","),
     )
     .join("\n");
+
+  const { inNativeApp } = await import("@/lib/ble");
+  if (await inNativeApp()) {
+    const { registerPlugin } = await import("@capacitor/core");
+    const files = registerPlugin<{ shareCsv: (options: { filename: string; csv: string }) => Promise<void> }>(
+      "ProxyProofBle",
+    );
+    await files.shareCsv({ filename, csv });
+    return;
+  }
+
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
+  document.body.appendChild(link);
   link.click();
+  link.remove();
   URL.revokeObjectURL(url);
 }
 

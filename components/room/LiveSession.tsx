@@ -165,7 +165,7 @@ export default function LiveSession() {
     }
   }
 
-  function exportMarks() {
+  async function exportMarks() {
     const rows = [["name", "code", "marked_at", "method", "presence", "rssi", "distance_m"]];
     marks.forEach((mark) => {
       const student = people.get(mark.student_id);
@@ -179,7 +179,11 @@ export default function LiveSession() {
         mark.distance_meters == null ? "" : String(mark.distance_meters),
       ]);
     });
-    downloadCsv(`${session!.course}-${session!.title}.csv`.replace(/\s+/g, "-").toLowerCase(), rows);
+    try {
+      await downloadCsv(`${session!.course}-${session!.title}.csv`.replace(/\s+/g, "-").toLowerCase(), rows);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "The CSV could not be exported.");
+    }
   }
 
   if (!mine) {
@@ -188,7 +192,11 @@ export default function LiveSession() {
       <Shell kicker={session.course}>
         <h1 className="serif mt-3 text-5xl">{session.title}</h1>
         <p className="mt-4 max-w-lg text-lg text-ink/70">
-          {mineStatus ? statusCopy(mineStatus.reason, mineStatus.distance) : live ? "Listening for this beacon from your room page." : "This session is closed."}
+          {mineStatus
+            ? statusCopy(mineStatus.reason, mineStatus.distance)
+            : live
+              ? "You joined this class. Stay nearby and keep this screen open so the phone can mark you."
+              : "This session is closed."}
         </p>
         <Link href="/room" className="btn btn-ink mt-8">Back to your room</Link>
       </Shell>

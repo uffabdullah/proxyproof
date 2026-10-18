@@ -154,7 +154,7 @@ export default function Landing() {
             Roster
           </a>
           <Link href={authed ? "/room" : "/login"} className="btn btn-ink px-4 py-2 text-sm">
-            {authed ? "Enter the room" : "Sign in"}
+            {authed ? "Your room" : "Sign in"}
           </Link>
         </nav>
       </header>
@@ -172,12 +172,17 @@ export default function Landing() {
               The token rotates every few seconds, the device belongs to one person, and a shared code does not count.
             </p>
             <div className="rise mt-8 flex flex-wrap gap-3">
-              <Link href={authed ? "/room" : "/signup"} className="btn btn-ink">
-                {authed ? "Open your room" : "Create an account"}
+              <Link href={authed ? "/join" : "/login?next=/join"} className="btn btn-ink">
+                Join a class
               </Link>
-              <a href="#how" className="btn btn-ghost">
-                See the three steps
-              </a>
+              <Link href={authed ? "/create" : "/login?next=/create"} className="btn btn-ghost">
+                Create a class
+              </Link>
+              {!authed && (
+                <Link href="/signup" className="btn btn-ghost">
+                  Create an account
+                </Link>
+              )}
             </div>
           </div>
 
@@ -308,8 +313,8 @@ export default function Landing() {
                 LinkedIn
               </a>
             </nav>
-            <Link href="/signup" className="btn btn-ink">
-              Start a class
+            <Link href={authed ? "/create" : "/login?next=/create"} className="btn btn-ink">
+              Create a class
             </Link>
           </div>
         </div>

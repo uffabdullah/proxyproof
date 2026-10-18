@@ -40,6 +40,7 @@ export default function RoomHome() {
 function StudentHome() {
   const { profile, deviceStatus, deviceError, locState, ble, statuses, refreshDevice, listenBle, inApp } = useRoom();
   const [history, setHistory] = useState<Array<SessionRow & { marked_at?: string; method?: string; presence?: string }>>([]);
+  const [openClasses, setOpenClasses] = useState<SessionRow[]>([]);
   const [closedCount, setClosedCount] = useState(0);
   const [attendedCount, setAttendedCount] = useState(0);
 
@@ -54,6 +55,8 @@ function StudentHome() {
         supabase.from("attendance").select(ATTENDANCE_COLUMNS).eq("student_id", profile.id),
       ]);
       if (ignore) return;
+      const allSessions = (sessions as SessionRow[] | null) ?? [];
+      setOpenClasses(allSessions.filter((session) => session.status === "live" && new Date(session.ends_at).getTime() > Date.now()));
       const markMap = new Map((marks as AttendanceRow[] | null)?.map((mark) => [mark.session_id, mark]));
       const rows = ((sessions as SessionRow[] | null) ?? []).filter(
         (session) => session.started_at >= profile.created_at,
@@ -155,6 +158,22 @@ function StudentHome() {
           </div>
         </div>
       </div>
+
+      <section className="mt-10">
+        <h2 className="serif text-3xl">Live classes</h2>
+        <div className="mt-4 space-y-3">
+          {openClasses.length === 0 && <p className="text-ink/60">No class is live right now. When an organiser starts one, it shows up here.</p>}
+          {openClasses.map((session) => (
+            <div key={session.id} className="panel flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+              <div>
+                <p className="font-medium">{session.title}</p>
+                <p className="text-sm text-ink/50">{session.course}</p>
+              </div>
+              <Link href={`/room/${session.id}`} className="btn btn-ink px-4 py-2 text-sm">Join</Link>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <section className="mt-10">
         <h2 className="serif text-3xl">History</h2>
@@ -282,12 +301,16 @@ function OrganiserHome() {
     });
   }, [closed, marks, students]);
 
-  function exportRecord() {
+  async function exportRecord() {
     const rows = [["name", "code", "attended", "sessions", "percent"]];
     record.forEach(({ student, attended, total, percent }) => {
       rows.push([student.full_name, student.student_code || "", String(attended), String(total), percent == null ? "" : String(percent)]);
     });
-    downloadCsv("proxyproof-class.csv", rows);
+    try {
+      await downloadCsv("proxyproof-class.csv", rows);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "The CSV could not be exported.");
+    }
   }
 
   return (

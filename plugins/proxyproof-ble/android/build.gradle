@@ -15,4 +15,5 @@ android {
 
 dependencies {
     implementation project(':capacitor-android')
+    implementation "androidx.core:core:1.17.0"
 }

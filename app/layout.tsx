@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Instrument_Serif, Outfit } from "next/font/google";
+import AppPermissions from "@/components/AppPermissions";
 import Cursor from "@/components/Cursor";
 import "./globals.css";
 
@@ -38,6 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${outfit.variable} ${instrument.variable}`}>
       <body>
         <Cursor />
+        <AppPermissions />
         {children}
       </body>
     </html>

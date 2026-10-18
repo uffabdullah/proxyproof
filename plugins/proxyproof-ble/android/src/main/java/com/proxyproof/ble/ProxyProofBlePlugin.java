@@ -11,9 +11,18 @@ import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.ParcelUuid;
+import androidx.core.content.FileProvider;
+import java.io.File;
+import java.io.FileOutputStream;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
@@ -33,7 +42,9 @@ import java.util.UUID;
             Manifest.permission.BLUETOOTH_SCAN,
             Manifest.permission.BLUETOOTH_CONNECT,
             Manifest.permission.ACCESS_FINE_LOCATION
-        }, alias = "bluetooth")
+        }, alias = "bluetooth"),
+        @Permission(strings = { Manifest.permission.ACCESS_FINE_LOCATION }, alias = "location"),
+        @Permission(strings = { Manifest.permission.POST_NOTIFICATIONS }, alias = "notifications")
     }
 )
 public class ProxyProofBlePlugin extends Plugin {
@@ -41,6 +52,106 @@ public class ProxyProofBlePlugin extends Plugin {
     private BluetoothLeAdvertiser advertiser;
     private BluetoothLeScanner scanner;
     private PluginCall pending;
+
+    @PluginMethod
+    public void prepare(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= 31 && getPermissionState("bluetooth") != PermissionState.GRANTED) {
+            requestPermissionForAlias("bluetooth", call, "prepareCallback");
+            return;
+        }
+        if (Build.VERSION.SDK_INT < 31 && getPermissionState("location") != PermissionState.GRANTED) {
+            requestPermissionForAlias("location", call, "prepareCallback");
+            return;
+        }
+        askNotesOrFinish(call);
+    }
+
+    @PermissionCallback
+    private void prepareCallback(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= 31 && getPermissionState("bluetooth") != PermissionState.GRANTED) {
+            call.reject("Bluetooth permission is required.");
+            return;
+        }
+        if (Build.VERSION.SDK_INT < 31 && getPermissionState("location") != PermissionState.GRANTED) {
+            call.reject("Location permission is required for Bluetooth scanning.");
+            return;
+        }
+        askNotesOrFinish(call);
+    }
+
+    private void askNotesOrFinish(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= 33 && getPermissionState("notifications") != PermissionState.GRANTED) {
+            requestPermissionForAlias("notifications", call, "notesCallback");
+            return;
+        }
+        finishPrepare(call);
+    }
+
+    @PermissionCallback
+    private void notesCallback(PluginCall call) {
+        finishPrepare(call);
+    }
+
+    private void finishPrepare(PluginCall call) {
+        showReady();
+        JSObject ret = new JSObject();
+        BluetoothAdapter adapter = adapter();
+        ret.put("bluetooth", adapter != null && adapter.isEnabled());
+        ret.put("notifications", Build.VERSION.SDK_INT < 33 || getPermissionState("notifications") == PermissionState.GRANTED);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void shareCsv(PluginCall call) {
+        String rawName = call.getString("filename", "attendance.csv");
+        String csv = call.getString("csv");
+        if (csv == null) {
+            call.reject("Nothing to export.");
+            return;
+        }
+        String filename = rawName.replaceAll("[^A-Za-z0-9._-]", "-");
+        if (!filename.endsWith(".csv")) filename = filename + ".csv";
+        try {
+            File dir = new File(getContext().getCacheDir(), "exports");
+            if (!dir.exists() && !dir.mkdirs()) {
+                call.reject("Could not create the export folder.");
+                return;
+            }
+            File file = new File(dir, filename);
+            FileOutputStream out = new FileOutputStream(file);
+            out.write(csv.getBytes(StandardCharsets.UTF_8));
+            out.close();
+            Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
+            Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType("text/csv");
+            send.putExtra(Intent.EXTRA_STREAM, uri);
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            Intent chooser = Intent.createChooser(send, "Export CSV");
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(chooser);
+            call.resolve();
+        } catch (Exception error) {
+            call.reject(error.getMessage() == null ? "The CSV could not be exported." : error.getMessage());
+        }
+    }
+
+    private void showReady() {
+        if (Build.VERSION.SDK_INT >= 33 && getPermissionState("notifications") != PermissionState.GRANTED) return;
+        NotificationManager manager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager == null) return;
+        String channelId = "proxyproof";
+        if (Build.VERSION.SDK_INT >= 26) {
+            manager.createNotificationChannel(new NotificationChannel(channelId, "Attendance", NotificationManager.IMPORTANCE_DEFAULT));
+        }
+        Notification.Builder builder = Build.VERSION.SDK_INT >= 26
+            ? new Notification.Builder(getContext(), channelId)
+            : new Notification.Builder(getContext());
+        manager.notify(4101, builder
+            .setContentTitle("ProxyProof")
+            .setContentText("Bluetooth attendance is ready.")
+            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .build());
+    }
 
     @PluginMethod
     public void startAdvertising(PluginCall call) {

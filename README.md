@@ -4,7 +4,7 @@ Live site: https://proxyproof-cyan.vercel.app
 
 Android install: https://github.com/uffabdullah/proxyproof/releases/latest
 
-The Android app uses Bluetooth. One phone starts the session and broadcasts. A second Android phone, signed in as a student, is marked when it hears that beacon. The website on a laptop still uses room location.
+The Android app uses Bluetooth. Opening it asks for Bluetooth and notification permission. One phone starts the session and broadcasts. A second Android phone, signed in as a student, joins the live class and is marked when it hears that beacon. The website on a laptop still uses room location.
 
 Attendance that counts only when a student is physically in the room.
 
@@ -12,6 +12,7 @@ An organiser starts a session on their phone. While that screen stays open it br
 
 ## What you can do
 
+- Join a class as a student, or create a class as an organiser. Signing out sends either button to login. Creating an account is separate.
 - Sign in as an organiser or a student.
 - The first phone a student uses is bound automatically. A different phone waits for an organiser to approve it.
 - Start a 5, 10, or 15 minute session. Keep the beacon page open.
